@@ -1,35 +1,18 @@
-from flask import Flask, request, jsonify
+from fastapi import FastAPI, UploadFile, File
+from fastapi.responses import JSONResponse
 import pandas as pd
-from io import BytesIO
-from datetime import datetime
 
-app = Flask(__name__)
+app = FastAPI()
 
-@app.route('/process-csv', methods=['POST'])
-def process_csv():
-    file = request.files['file']
-    df = pd.read_csv(BytesIO(file.read()))
-    
-    # Validate & Transform
-    errors = []
-    results = []
-    
-    for _, row in df.iterrows():
-        try:
-            quantity = int(row['Quantity'])
-            if quantity < 0:
-                raise ValueError("Negative quantity not allowed")
+@app.post("/process")
+async def process_excel(file: UploadFile = File(...)):
+    try:
+        df = pd.read_excel(file.file)
+        required = ["Material_Code", "Material_Name", "Category", "Quantity", "Unit", "Stock_Date"]
+        if not all(col in df.columns for col in required):
+            return JSONResponse(status_code=400, content={"error": "Missing required columns"})
 
-            date = datetime.strptime(row['Stock_Date'], "%Y-%m-%d")
-            results.append({
-                'material_code': row['Material_Code'],
-                'material_name': row['Material_Name'],
-                'category': row['Category'],
-                'quantity': quantity,
-                'unit': row['Unit'],
-                'stock_date': date.strftime('%Y-%m-%d')
-            })
-        except Exception as e:
-            errors.append({'row': row.to_dict(), 'error': str(e)})
-
-    return jsonify({'valid_data': results, 'errors': errors})
+        df["Stock_Date"] = df["Stock_Date"].astype(str)
+        return df.to_dict(orient="records")
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": str(e)})
